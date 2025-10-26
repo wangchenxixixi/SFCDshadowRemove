@@ -25,7 +25,7 @@ from log_report import TestReport
 def train(config):
     gpu_manage(config)
 
-    ### DATASET LOAD ###
+
     print('===> Loading datasets')
     
     train_dataset = TrainDataset(config)
@@ -37,7 +37,7 @@ def train(config):
     validation_data_loader = DataLoader(dataset=validation_dataset, num_workers=config.threads, batch_size=config.validation_batchsize, shuffle=False)
     
     
-    ### MODELS LOAD ###
+
     print('===> Loading models')
 
     gen = Generator(gpu_ids=config.gpu_ids)
@@ -54,7 +54,7 @@ def train(config):
         dis.load_state_dict(param)
         print('load {} as pretrained model'.format(config.dis_init))
 
-    # setup optimizer
+
     opt_gen = optim.Adam(gen.parameters(), lr=config.lr, betas=(config.beta1, 0.999), weight_decay=0.00001)
     opt_dis = optim.Adam(dis.parameters(), lr=config.lr, betas=(config.beta1, 0.999), weight_decay=0.00001)
 
@@ -84,7 +84,7 @@ def train(config):
 
     print('===> begin')
     start_time=time.time()
-    # main
+
     for epoch in range(1, config.epoch + 1):
         epoch_start_time = time.time()
         for iteration, batch in enumerate(training_data_loader, 1):
@@ -94,44 +94,23 @@ def train(config):
             M.resize_(M_cpu.size()).copy_(M_cpu)
             att, fake_b = gen.forward(real_a)
 
-            ################
-            ### Update D ###
-            ################
+
             
             opt_dis.zero_grad()
 
-            # train with fake
+
             fake_ab = torch.cat((real_a, fake_b), 1)
             pred_fake = dis.forward(fake_ab.detach())
             batchsize, _, w, h = pred_fake.size()
 
-            loss_d_fake = torch.sum(criterionSoftplus(pred_fake)) / batchsize / w / h
-
-            # train with real
-            real_ab = torch.cat((real_a, real_b), 1)
-            pred_real = dis.forward(real_ab)
-            loss_d_real = torch.sum(criterionSoftplus(-pred_real)) / batchsize / w / h
-
-            # Combined loss
-            loss_d = loss_d_fake + loss_d_real
-
-            loss_d.backward()
-
             if epoch % config.minimax == 0:
                 opt_dis.step()
-
-            ################
-            ### Update G ###
-            ################
             
             opt_gen.zero_grad()
 
-            # First, G(A) should fake the discriminator
             fake_ab = torch.cat((real_a, fake_b), 1)
             pred_fake = dis.forward(fake_ab)
             loss_g_gan = torch.sum(criterionSoftplus(-pred_fake)) / batchsize / w / h
-
-            # Second, G(A) = B
             loss_g_l1 = criterionL1(fake_b, real_b) * config.lamb
             loss_g_att = criterionMSE(att[:,0,:,:], M)
             loss_g = loss_g_gan + loss_g_l1 + loss_g_att
@@ -140,16 +119,14 @@ def train(config):
 
             opt_gen.step()
 
-            # log
+
             if iteration % 10 == 0:
-                print("===> Epoch[{}]({}/{}): loss_d_fake: {:.4f} loss_d_real: {:.4f} loss_g_gan: {:.4f} loss_g_l1: {:.4f}".format(
-                epoch, iteration, len(training_data_loader), loss_d_fake.item(), loss_d_real.item(), loss_g_gan.item(), loss_g_l1.item()))
-                
+
                 log = {}
                 log['epoch'] = epoch
                 log['iteration'] = len(training_data_loader) * (epoch-1) + iteration
                 log['gen/loss'] = loss_g.item()
-                log['dis/loss'] = loss_d.item()
+
 
                 logreport(log)
 
@@ -177,7 +154,7 @@ if __name__ == '__main__':
     os.makedirs(config.out_dir)
     print('Job number: {:04d}'.format(n_job))
 
-    # 保存本次训练时的配置
+
     shutil.copyfile('config.yml', os.path.join(config.out_dir, 'config.yml'))
 
     train(config)
